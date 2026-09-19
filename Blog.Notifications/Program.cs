@@ -3,12 +3,22 @@ using Blog.Notifications.Consumers;
 using Blog.Notifications.Hubs;
 using Blog.Notifications.Options;
 using Blog.Notifications.SignalR;
+using Blog.Notifications.Setup;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Same shared MongoDB log store Blog.API writes to
+// (learning-notes/notes/49-distributed-tracing-correlation-ids.md) —
+// DatabaseType: None by default, so plain `dotnet run` behavior is
+// unchanged without Docker.
+builder.Services.AddSerilog();
+SerilogSetup.AddSerilog(builder.Configuration.GetSection("Logs").Get<LogSetupConfig>()!);
+builder.Host.UseSerilog();
 
 var jwtSettings = new JwtSettings();
 builder.Configuration.Bind(nameof(JwtSettings), jwtSettings);
