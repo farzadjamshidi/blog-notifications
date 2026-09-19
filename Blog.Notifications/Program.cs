@@ -78,14 +78,44 @@ builder.Services.AddMassTransit(x =>
         x.UsingRabbitMq((context, cfg) =>
         {
             cfg.Host(rabbitMqHost);
+            ConfigureResilience(cfg);
             cfg.ConfigureEndpoints(context);
         });
     }
     else
     {
-        x.UsingInMemory((context, cfg) => cfg.ConfigureEndpoints(context));
+        x.UsingInMemory((context, cfg) =>
+        {
+            ConfigureResilience(cfg);
+            cfg.ConfigureEndpoints(context);
+        });
     }
 });
+
+// 9.4 — resilience for the consumer pipeline, not inherently tied to
+// RabbitMQ, so applied on both transport branches.
+static void ConfigureResilience(IBusFactoryConfigurator cfg)
+{
+    // Retry a failed consume with a growing delay before giving up and
+    // moving the message to its error queue — covers transient failures
+    // (a brief hub delivery hiccup, a momentary connection blip) without
+    // retrying forever.
+    cfg.UseMessageRetry(r => r.Intervals(
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(15)));
+
+    // If the consumer keeps failing well beyond what retry alone can
+    // paper over, stop attempting new deliveries for a cooldown window
+    // instead of hammering an already-struggling dependency.
+    cfg.UseCircuitBreaker(cb =>
+    {
+        cb.TrackingPeriod = TimeSpan.FromMinutes(1);
+        cb.TripThreshold = 15;
+        cb.ActiveThreshold = 10;
+        cb.ResetInterval = TimeSpan.FromMinutes(5);
+    });
+}
 
 var app = builder.Build();
 
